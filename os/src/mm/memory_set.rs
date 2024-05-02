@@ -262,6 +262,22 @@ impl MemorySet {
             false
         }
     }
+
+    ///  munmap the area to the page table
+    #[allow(unused)]
+    pub fn munmap(&mut self, start: VirtAddr, end: VirtAddr) -> isize {
+        let mut start = start.into();
+        let end = end.ceil();
+
+        while start != end {
+            if self.page_table.translate(start).is_none() || self.page_table.translate(start).unwrap().is_valid() == false {
+                return -1;
+            }
+            self.page_table.unmap(start);
+            start.step();
+        }
+        0
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
