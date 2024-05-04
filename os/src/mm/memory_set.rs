@@ -263,19 +263,76 @@ impl MemorySet {
         }
     }
 
+    /// check
+    #[allow(unused)]
+    pub fn check_overlap(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
+        let start_vpn = start.floor();
+        let end_vpn = end.ceil();
+
+        if let Some((_index, _area)) = self.areas.iter_mut().enumerate().find(|(_, area)| {
+            (area.vpn_range.get_start() <= start_vpn && area.vpn_range.get_end() >= end_vpn)
+                || (start_vpn < area.vpn_range.get_start() && end_vpn > area.vpn_range.get_start())
+                || (start_vpn < area.vpn_range.get_end() && end_vpn > area.vpn_range.get_end())
+        }) {
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 1
+    #[allow(unused)]
+    pub fn is_gain(&mut self, start_va: VirtAddr, _end_va: VirtAddr) -> bool {
+        let start_vpn = start_va.ceil();
+        let end_vpn = _end_va.floor();
+        // debug!("st_va: {:?} end_va {:?}", start_vpn, end_vpn);
+        if let Some((_index, _area)) = self.areas.iter_mut().enumerate().find(|(_, area)| {
+            area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn
+        }) {
+            true
+        } else {
+            false
+        }
+    }
+
     ///  munmap the area to the page table
     #[allow(unused)]
     pub fn munmap(&mut self, start: VirtAddr, end: VirtAddr) -> isize {
-        let mut start = start.into();
-        let end = end.ceil();
+        // let mut start = start.into();
+        // let end = end.ceil();
 
-        while start != end {
-            if self.page_table.translate(start).is_none() || self.page_table.translate(start).unwrap().is_valid() == false {
-                return -1;
-            }
-            self.page_table.unmap(start);
-            start.step();
+        if self.is_gain(start, end) == false {
+            return -1;
         }
+
+        // if let Some(area) = self
+        //     .areas
+        //     .iter_mut()
+        //     .find(|area| area.vpn_range.get_start() == start.floor())
+        // {
+        //     area.unmap(&mut self.page_table);
+        //     self.areas.retain(|area| area.vpn_range.get_start() != start.floor());
+        //     return 0;
+        // } else {
+        //     return -1;
+        // }
+
+        let mut index = 0;
+        println!("pop {}", index);
+        if let Some((_index, area)) = self
+            .areas
+            .iter_mut()
+            .enumerate()
+            .find(|(_, area)| area.vpn_range.get_start() == VirtPageNum::from(start))
+        {
+            index = _index;
+            debug!("remove index:{}", _index);
+            area.unmap(&mut self.page_table);
+        } else {
+            return -1;
+        }
+        println!("pop {}", index);
+        self.areas.remove(index);
         0
     }
 }

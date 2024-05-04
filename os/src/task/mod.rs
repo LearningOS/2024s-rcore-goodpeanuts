@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -192,11 +192,15 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
 
-        if inner.tasks[cur].memory_set.translate(VirtPageNum::from(start_va)).is_some() || inner.tasks[cur].memory_set.translate(VirtPageNum::from(end_va)).is_some(){
+        // if inner.tasks[cur].memory_set.translate(VirtPageNum::from(start_va)).is_some() || inner.tasks[cur].memory_set.translate(VirtPageNum::from(end_va)).is_some(){
+        //     return -1;
+        // }
+
+        if inner.tasks[cur].memory_set.check_overlap(start_va, end_va) {
             return -1;
         }
-
-        inner.tasks[cur].memory_set.insert_framed_area(start_va, end_va, permission);
+        
+        inner.tasks[cur].memory_set.insert_framed_area(start_va, end_va.ceil().into(), permission);
         0
     }
 

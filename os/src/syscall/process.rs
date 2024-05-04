@@ -81,7 +81,7 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     if virt_start.aligned() == false || _port & !0x7 != 0 || _port& 0x7 == 0 {
         return -1;
     }
-    let virt_end = VirtAddr::from((_start + _len + 4095) / 4096 * 4096);
+    let virt_end = VirtAddr::from(_start + _len);
     // let permission = MapPermission::from_bits(_port as u8).unwrap() | MapPermission::U; 
     // KERNEL_SPACE.exclusive_access().insert_framed_area(virt_sart, virt_end, permission);
 
@@ -107,7 +107,7 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     if virt_start.aligned() == false {
         return -1;
     }
-    let virt_end = VirtAddr::from(_start + _len);
+    let virt_end = VirtAddr::from(_start + ((_len + 4095) / 4096) * 4096);
     process_munmap(virt_start, virt_end)
 }
 /// change data segment size
