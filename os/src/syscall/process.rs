@@ -2,7 +2,7 @@
 use core::mem::size_of;
 use crate::mm::{MapPermission, VirtAddr};
 
-use crate::task::{process_mmap, process_munmap};
+use crate::task::{task_mmap, task_munmap};
 use crate::{
     config::MAX_SYSCALL_NUM, mm::translated_byte_buffer, task::{
         change_program_brk, current_user_token, exit_current_and_run_next, get_current_task_run_time, get_syscall_times, suspend_current_and_run_next, TaskStatus
@@ -63,7 +63,7 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
+    // trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
     let mut buffer = translated_byte_buffer(current_user_token(), _ti as *const u8, size_of::<TaskInfo>());
     let task_info_ptr = buffer[0].as_mut_ptr() as *mut TaskInfo;
     unsafe {
@@ -74,41 +74,31 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     0
 }
 
-// YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    let virt_start = VirtAddr::from(_start);
-    if virt_start.aligned() == false || _port & !0x7 != 0 || _port& 0x7 == 0 {
+    // trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    let start_va = VirtAddr::from(_start);
+    if start_va.aligned() == false || _port & !0x7 != 0 || _port& 0x7 == 0 {
         return -1;
     }
-    let virt_end = VirtAddr::from(_start + _len);
-    // let permission = MapPermission::from_bits(_port as u8).unwrap() | MapPermission::U; 
-    // KERNEL_SPACE.exclusive_access().insert_framed_area(virt_sart, virt_end, permission);
+    let end_va = VirtAddr::from(_start + _len);
 
-    let mut map_p = MapPermission::U;
-    if (_port & 0b0001) != 0 {
-        map_p = map_p | MapPermission::R;
-    }
-    if (_port & 0b0010) != 0 {
-        map_p = map_p | MapPermission::W;
-    }
-    if (_port & 0b0100) != 0 {
-        map_p = map_p | MapPermission::X;
-    }
+    let mut permission = MapPermission::U;
+    permission.set(MapPermission::R, _port  as u8 & 0b0001 == 1);
+    permission.set(MapPermission::W, _port >> 1 as u8 & 0b0001 == 1);
+    permission.set(MapPermission::X, _port >> 2 as u8 & 0b0001 == 1);
 
-
-    process_mmap(virt_start, virt_end, map_p)
+    task_mmap(start_va, end_va, permission)
 }
 
-// YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    // trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
     let virt_start = VirtAddr::from(_start);
     if virt_start.aligned() == false {
         return -1;
     }
     let virt_end = VirtAddr::from(_start + ((_len + 4095) / 4096) * 4096);
-    process_munmap(virt_start, virt_end)
+
+    task_munmap(virt_start, virt_end)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

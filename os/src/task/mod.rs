@@ -191,17 +191,7 @@ impl TaskManager {
     ) -> isize {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
-
-        // if inner.tasks[cur].memory_set.translate(VirtPageNum::from(start_va)).is_some() || inner.tasks[cur].memory_set.translate(VirtPageNum::from(end_va)).is_some(){
-        //     return -1;
-        // }
-
-        if inner.tasks[cur].memory_set.check_overlap(start_va, end_va) {
-            return -1;
-        }
-        
-        inner.tasks[cur].memory_set.insert_framed_area(start_va, end_va.ceil().into(), permission);
-        0
+        inner.tasks[cur].memory_set.insert_framed_area(start_va, end_va.ceil().into(), permission)
     }
 
     fn munmap (&self,
@@ -210,17 +200,17 @@ impl TaskManager {
     ) -> isize {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
-        inner.tasks[cur].memory_set.munmap(start_va, end_va)
+        inner.tasks[cur].memory_set.remove_framed_area(start_va, end_va)
     }
 }
 
-/// mmap
-pub fn process_mmap(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize {
+/// map the physical memory to the virtual memory in current task
+pub fn task_mmap(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize {
     TASK_MANAGER.mmap(start_va, end_va, permission)
 }
 
-/// unmap
-pub fn process_munmap(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+/// unmap the virtual memory in current task
+pub fn task_munmap(start_va: VirtAddr, end_va: VirtAddr) -> isize {
     TASK_MANAGER.munmap(start_va, end_va)
 }
 
