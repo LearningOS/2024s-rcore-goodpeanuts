@@ -267,10 +267,13 @@ impl TaskControlBlock {
     /// spawn a new process
     pub fn spawn(self: &Arc<Self>, data: &[u8]) -> isize {
         let task_control_block = TaskControlBlock::new(data);
-        // task_control_block.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        // 默认的new方法提供给initproc的，没有设置parent，所以这里要设置一下
+        // 但是没有下面这一行也能通过，可能测试样例没有检查这一点
+        task_control_block.inner_exclusive_access().parent = Some(Arc::downgrade(self));
         let pid = task_control_block.pid.0;
         let task = Arc::new(task_control_block);
-        self.inner_exclusive_access().children.push(task.clone());  // 必加
+        // 维持父子关系，不加过不了测试样例
+        self.inner_exclusive_access().children.push(task.clone());  
         add_task(task);
         pid as isize
     }
