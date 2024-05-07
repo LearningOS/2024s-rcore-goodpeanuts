@@ -1,8 +1,8 @@
 //! Types related to task management & Functions for completely changing TCB
-use super::TaskContext;
+use super::{add_task, TaskContext};
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
 use crate::fs::{File, Stdin, Stdout};
+use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
@@ -71,6 +71,24 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// init time
+    pub init_time: usize,
+
+    /// already start
+    pub start: bool,
+
+    /// syscall times
+    pub syscall_cnt: [u32; MAX_SYSCALL_NUM],
+
+    /// stride
+    pub stride: usize,
+
+    /// priority
+    pub priority: usize,
+
+    /// pass
+    pub pass: usize,
 }
 
 impl TaskControlBlockInner {
@@ -93,6 +111,9 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
+    pub fn get_init_time(&self) -> usize {
+        self.init_time
     }
 }
 
@@ -135,6 +156,12 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    init_time: 0,
+                    start: false,
+                    syscall_cnt: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
+                    pass: BIG_STRIDE / 16,
                 })
             },
         };
@@ -216,6 +243,12 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    init_time: 0,
+                    start: false,
+                    syscall_cnt: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
+                    pass: BIG_STRIDE / 16,
                 })
             },
         });
@@ -231,6 +264,17 @@ impl TaskControlBlock {
         // ---- release parent PCB
     }
 
+    /// spawn a new process
+    pub fn spawn(self: &Arc<Self>, data: &[u8]) -> isize {
+        let task_control_block = TaskControlBlock::new(data);
+        // task_control_block.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        let pid = task_control_block.pid.0;
+        let task = Arc::new(task_control_block);
+        self.inner_exclusive_access().children.push(task.clone());  // 必加
+        add_task(task);
+        pid as isize
+    }
+ 
     /// get pid of process
     pub fn getpid(&self) -> usize {
         self.pid.0
@@ -260,6 +304,12 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+    /// set the priority of the process
+    pub fn set_priority(&self, _priority: usize) -> isize {
+        self.inner_exclusive_access().priority = _priority;
+        self.inner_exclusive_access().pass = BIG_STRIDE / _priority;
+        _priority as isize
     }
 }
 

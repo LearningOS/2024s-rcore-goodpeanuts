@@ -54,28 +54,61 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+    /// check area range is exit in MapArea or not
+    #[allow(unused)]
+    fn check_conlict(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
+        let start_vpn = start.floor();
+        let end_vpn = end.ceil();
+
+        if let Some(area) = self.areas.iter().find(|area| {
+            (area.vpn_range.get_start() <= start_vpn && area.vpn_range.get_end() >= end_vpn)
+                || (start_vpn < area.vpn_range.get_start() && end_vpn > area.vpn_range.get_start())
+                || (start_vpn < area.vpn_range.get_end() && end_vpn > area.vpn_range.get_end())
+        }) {
+            true
+        } else {
+            false
+        }
+    }
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
         start_va: VirtAddr,
         end_va: VirtAddr,
         permission: MapPermission,
-    ) {
+    ) -> isize {
+        if self.check_conlict(start_va, end_va) {
+            return -1;
+        }
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+        0
     }
     /// remove a area
-    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
-        if let Some((idx, area)) = self
-            .areas
-            .iter_mut()
-            .enumerate()
-            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
-        {
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) -> isize{
+        if let Some(area) = self.areas.iter_mut().find(|area| {
+            area.vpn_range.get_start() == start_vpn
+        }) {
             area.unmap(&mut self.page_table);
-            self.areas.remove(idx);
+            self.areas.retain(|area| area.vpn_range.get_start() != start_vpn);
+            return 0;
+        } else {
+            return -1;
+        }
+    }
+    ///  remove the area from the memory set
+    #[allow(unused)]
+    pub fn remove_framed_area(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+        if let Some(area) = self.areas.iter_mut().find(|area| {
+            area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn
+        }) {
+            area.unmap(&mut self.page_table);
+            self.areas.retain(|area| area.vpn_range.get_start() != start_vpn);
+            return 0;
+        } else {
+            return -1;
         }
     }
     /// Add a new MapArea into this MemorySet.
