@@ -7,7 +7,10 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::config::MAX_SYSCALL_NUM;
+use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -44,6 +47,62 @@ impl Processor {
     pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
         self.current.as_ref().map(Arc::clone)
     }
+
+    /// get current task init time
+    pub fn get_current_task_init_time(&self) -> usize {
+        if self.current.is_none() {
+            get_time_ms()
+        } else {
+            self.current.as_ref().unwrap().inner_exclusive_access().init_time
+        }
+    }
+
+    /// count syscall times in task control block
+    pub fn count_syscall(&mut self, syscall_id: usize) {
+        if self.current.is_none() {
+            return;
+        }
+        self.current.as_mut().unwrap().inner_exclusive_access().syscall_cnt[syscall_id] += 1;
+    }
+
+    /// get syscall times in task control block
+    pub fn get_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        if self.current.is_none() {
+            [0; MAX_SYSCALL_NUM]
+        } else {
+            self.current.as_ref().unwrap().inner_exclusive_access().syscall_cnt
+        }
+    }
+
+    /// mmap a area in memory set
+    pub fn mmap(&mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission
+    ) -> isize {
+        if self.current.is_none() {
+            return - 1;
+        }
+        self.current.as_mut().unwrap().inner_exclusive_access().memory_set.insert_framed_area(
+            start_va,
+            end_va,
+            permission
+        )        
+    }
+
+    /// unmap with strat vpn
+    pub fn unmap(&mut self,
+        start_vpn: VirtPageNum,
+        end_vpn: VirtPageNum,
+    ) -> isize {
+        if self.current.is_none() {
+            return -1;
+        }
+        self.current.as_mut().unwrap().inner_exclusive_access().memory_set.remove_framed_area(
+            start_vpn,
+            end_vpn,
+        )
+    }
 }
 
 lazy_static! {
@@ -61,6 +120,10 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            if task_inner.start == false {
+                task_inner.init_time = get_time_ms();
+                task_inner.start = true;
+            }
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -108,4 +171,29 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+/// get current task run time
+pub fn get_current_task_run_time() -> usize {
+    get_time_ms() - PROCESSOR.exclusive_access().get_current_task_init_time()
+}
+
+/// get syscall count
+pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    PROCESSOR.exclusive_access().get_syscall_times()
+}
+
+/// count syscall
+pub fn count_syscall(syscall_id: usize) {
+    PROCESSOR.exclusive_access().count_syscall(syscall_id);
+}
+
+/// mmap
+pub fn processor_mmap(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize {
+    PROCESSOR.exclusive_access().mmap(start_va, end_va, permission)
+}
+
+/// mmap
+pub fn processor_munmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+    PROCESSOR.exclusive_access().unmap(start_vpn, end_vpn)
 }
