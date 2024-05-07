@@ -81,6 +81,10 @@ impl EasyFileSystem {
         block_cache_sync_all();
         Arc::new(Mutex::new(efs))
     }
+    /// get inode_area_start_block
+    pub fn get_inode_area_start_block(&self) -> u32 {
+        self.inode_area_start_block
+    }
     /// Open a block device as a filesystem
     pub fn open(block_device: Arc<dyn BlockDevice>) -> Arc<Mutex<Self>> {
         // read SuperBlock

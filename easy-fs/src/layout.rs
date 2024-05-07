@@ -85,6 +85,7 @@ pub struct DiskInode {
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect1: u32,
     pub indirect2: u32,
+    pub hard_link_count: u32,
     type_: DiskInodeType,
 }
 
@@ -96,6 +97,7 @@ impl DiskInode {
         self.direct.iter_mut().for_each(|v| *v = 0);
         self.indirect1 = 0;
         self.indirect2 = 0;
+        self.hard_link_count = 1;
         self.type_ = type_;
     }
     /// Whether this inode is a directory
@@ -135,6 +137,13 @@ impl DiskInode {
     pub fn blocks_num_needed(&self, new_size: u32) -> u32 {
         assert!(new_size >= self.size);
         Self::total_blocks(new_size) - Self::total_blocks(self.size)
+    }
+    /// Get DiskNodeType
+    pub fn get_type(&self) -> u32 {
+        match self.type_ {
+            DiskInodeType::File => 0o100000,
+            DiskInodeType::Directory => 0o040000,
+        }
     }
     /// Get id of block given inner id
     pub fn get_block_id(&self, inner_id: u32, block_device: &Arc<dyn BlockDevice>) -> u32 {
