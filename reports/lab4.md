@@ -12,28 +12,13 @@ syscall ID: 37
 
 功能：创建一个文件的一个硬链接， [linkat标准接口](https://linux.die.net/man/2/linkat) 。
 
-Ｃ接口： `int linkat(int olddirfd, char* oldpath, int newdirfd, char* newpath, unsigned int flags)`
+首先要在layout层中，对每一个`DiskInode`添加硬连接数字段。一开始想通过Arc计数来判断连接数，发现计数只能作用于os层，不能正确说明文件系统中的磁盘上的硬链接数。
 
-Rust 接口： `fn linkat(olddirfd: i32, oldpath: *const u8, newdirfd: i32, newpath: *const u8, flags: u32) -> i32`
+`Inode`是在vfs中对`DiskInode`的抽象，因此添加硬连接字段后，每创建一个`Inode`即初始化`DiskInode`时记得将硬连接数置为1。每次硬连接创建时并不创建新的`Inode`，而是创建一个新的目录项。
 
-参数：
+先在`sys_linkat`中翻译出新旧文件名，如果相同则直接返回-1。然后在根节点(本实验文件系统只有根目录)下调用创建硬连接方法。如果连接的新文件名已存在则直接返回-1。
 
-- olddirfd，newdirfd: 仅为了兼容性考虑，本次实验中始终为 AT_FDCWD (-100)，可以忽略。
-    
-- flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略。
-
-     - oldpath：原有文件路径
-         
-     - newpath: 新的链接文件路径。
-         
-     
- - 说明：
-     
-     - 为了方便，不考虑新文件路径已经存在的情况（属于未定义行为），除非链接同名文件。
-         
-     - 返回值：如果出现了错误则返回 -1，否则返回 0。
-- 可能的错误
- - 链接同名文件。 
+在排除了以上的错误后，获取`inode_id`在磁盘上找到`Inode`对应的`DiskInode`读入内存，将其硬连接数加一，然后在目录中添加新的目录项。最后刷新磁盘缓冲，返回硬连接数。
 
 
 **unlinkat**:
@@ -41,31 +26,8 @@ Rust 接口： `fn linkat(olddirfd: i32, oldpath: *const u8, newdirfd: i
  - syscall ID: 35
      
  - 功能：取消一个文件路径到文件的链接, [unlinkat标准接口](https://linux.die.net/man/2/unlinkat) 。
-     
- - Ｃ接口： `int unlinkat(int dirfd, char* path, unsigned int flags)`
-     
- - Rust 接口： `fn unlinkat(dirfd: i32, path: *const u8, flags: u32) -> i32`
-     
- - 参数：
-     
-     - dirfd: 仅为了兼容性考虑，本次实验中始终为 AT_FDCWD (-100)，可以忽略。
-         
-     - flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略。
-         
-     - path：文件路径。
-         
-     
- - 说明：
-     
-     - 注意考虑使用 unlink 彻底删除文件的情况，此时需要回收inode以及它对应的数据块。
-         
-     
- - 返回值：如果出现了错误则返回 -1，否则返回 0。
-     
- - 可能的错误
-     
-     - 文件不存在。
-         
+
+解除硬连接即删除目录项。首先判断目录项是否存在，然后将所有目录项读入一个数组除了要删除的目录项只保存下他的`inode_id`，然后将删掉解除的硬连接目录项的数组写回磁盘。接下来根据这个`id`找到对应的`DiskInode`，将其硬连接计数减一。最后判断硬连接数是否归零，如果归零还得将`DiskInode`删除。刷新磁盘缓存，返回硬连接数。
      
 
 **fstat**:
@@ -74,41 +36,40 @@ Rust 接口： `fn linkat(olddirfd: i32, oldpath: *const u8, newdirfd: i
      
  - 功能：获取文件状态。
      
- - Ｃ接口： `int fstat(int fd, struct Stat* st)`
      
- - Rust 接口： `fn fstat(fd: i32, st: *mut Stat) -> i32`
-     
- - 参数：
-     
-     - fd: 文件描述符>         
-     - st: 文件状态结构体
-         
-     
-```rust
-     #[repr(C)]
-     #[derive(Debug)]
-     pub struct Stat {
-         /// 文件所在磁盘驱动器号，该实验中写死为 0 即可
-         pub dev: u64,
-         /// inode 文件所在 inode 编号
-         pub ino: u64,
-         /// 文件类型
-         pub mode: StatMode,
-         /// 硬链接数量，初始为1
-         pub nlink: u32,
-         /// 无需考虑，为了兼容性设计
-         pad: [u64; 7],
-     }
-     
-     /// StatMode 定义：
-     bitflags! {
-         pub struct StatMode: u32 {
-             const NULL  = 0;
-             /// directory
-             const DIR   = 0o040000;
-             /// ordinary regular file
-             const FILE  = 0o100000;
-         }
-     }
+在vfs中添加获取当前`inode`所对应的`disknode`相关信息的方法`stat`。在os中为`File`trait添加`stat`方法，这样直接调用进程文件描述符表中存储对象的`stat`方法就行。
+
+
+## 问答作业
+
+1. 在我们的easy-fs中，root inode起着什么作用？如果root inode中的内容损坏了，会发生什么？
+
+root inode作为根目录文件夹类型的`Inode`节点，保存了当前目录下的所有目录项。如果损坏了，当前目录下所有文件都将无法索引到正确的磁盘数据。
+
+2. 举出使用 pipe 的一个实际应用的例子。
+
+
+shell 中的管道操作符 |：
+
+```shell
+ls | grep .txt
 ```
 
+在这个例子中，ls 命令列出当前目录中的所有文件，然后通过管道将这个列表传递给 grep .txt 命令。grep .txt 命令从管道中读取数据，然后搜索包含 .txt 的行，也就是所有的 .txt 文件。
+
+
+## 荣誉准则
+
+1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与 **以下各位** 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：
+    
+
+    
+2. 此外，我也参考了 **以下资料** ，还在代码中对应的位置以注释形式记录了具体的参考来源及内容：
+    
+[rCore Learning](https://sjodqtoogh.feishu.cn/docx/FICVde0z2okapCxTecPcCRoRnSd) 
+
+[rCore文件系统 easy-fs](https://sjodqtoogh.feishu.cn/docx/GbxNduOvDotgUTxrfqycjkXJncf) 
+
+3. 我独立完成了本次实验除以上方面之外的所有工作，包括代码与文档。 我清楚地知道，从以上方面获得的信息在一定程度上降低了实验难度，可能会影响起评分。
+
+4. 我从未使用过他人的代码，不管是原封不动地复制，还是经过了某些等价转换。 我未曾也不会向他人（含此后各届同学）复制或公开我的实验代码，我有义务妥善保管好它们。 我提交至本实验的评测系统的代码，均无意于破坏或妨碍任何计算机系统的正常运转。 我清楚地知道，以上情况均为本课程纪律所禁止，若违反，对应的实验成绩将按“-100”分计。

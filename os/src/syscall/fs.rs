@@ -1,7 +1,5 @@
 //! File and filesystem-related syscalls
 
-// use alloc::sync::Arc;
-
 use crate::fs::{open_file, OpenFlags, Stat, ROOT_INODE};
 use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
@@ -93,12 +91,10 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     match &inner.fd_table[fd] {
         Some(file) => {
             let file = file.clone();
-            file.stat(stat);
-            0
+            file.stat(stat)
         }
         None => -1,
     }
-    // 0
 }
 
 /// YOUR JOB: Implement linkat.
@@ -110,8 +106,7 @@ pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
     let current_user_token = current_user_token();
     let old_name = translated_str(current_user_token, _old_name);
     let new_name = translated_str(current_user_token, _new_name);
-    if old_name == new_name
-    {
+    if old_name == new_name {
         return -1;
     }
     ROOT_INODE.link(old_name.as_str(), new_name.as_str())

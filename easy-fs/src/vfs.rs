@@ -159,14 +159,12 @@ impl Inode {
             return -1;
         }
         let mut fs = self.fs.lock();
-        // let id = self.find(old_name).unwrap().block_id;
         let id = self.read_disk_inode(|root_inode| self.find_inode_id(old_name, root_inode));
         if id.is_none() {
             return -1;
         }
         let id = id.unwrap();
 
-        // **???** why clone here
         let (block_id, block_offset) = fs.get_disk_inode_pos(id as u32);
         let hard_link_count = get_block_cache(block_id as usize, Arc::clone(&self.block_device))
             .lock()
