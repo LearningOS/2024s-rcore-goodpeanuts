@@ -49,6 +49,20 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// enable_deadlock_detect
+    pub deadlock_detect: bool,
+    /// mutex available
+    pub mutex_available: Vec<usize>,
+    /// mutex allocated
+    pub mutex_allocated: Vec<Vec<usize>>,
+    /// mutex needed
+    pub mutex_needed: Vec<Vec<usize>>,
+    /// semaphore available
+    pub sem_available: Vec<usize>,
+    /// semaphore allocated
+    pub sem_allocated: Vec<Vec<usize>>,
+    /// semaphore needed
+    pub sem_needed: Vec<Vec<usize>>,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +133,13 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    mutex_available: Vec::new(),
+                    mutex_allocated: vec![Vec::new(); 1],
+                    mutex_needed: vec![Vec::new(); 1],
+                    sem_available: Vec::new(),
+                    sem_allocated: vec![Vec::new(); 1],
+                    sem_needed: vec![Vec::new(); 1],
                 })
             },
         });
@@ -245,6 +266,13 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    mutex_available: Vec::new(),
+                    mutex_allocated: vec![Vec::new(); 1],
+                    mutex_needed: vec![Vec::new(); 1],
+                    sem_available: Vec::new(),
+                    sem_allocated: vec![Vec::new(); 1],
+                    sem_needed: vec![Vec::new(); 1],
                 })
             },
         });
@@ -281,5 +309,74 @@ impl ProcessControlBlock {
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+    /// mutex deadlock prevention
+    pub fn mutex_deadlock_prevention(&self) -> bool {
+        let task_len = self.inner_exclusive_access().tasks.len();
+        let mut finish = vec![false; task_len];
+
+        let mut work = self.inner_exclusive_access().mutex_available.clone();
+        let need = self.inner_exclusive_access().mutex_needed.clone();
+        let alloc = self.inner_exclusive_access().mutex_allocated.clone();
+
+        loop {
+            let mut change = false;
+            for i in 0..task_len {
+                if finish[i] {
+                    continue;
+                }
+                let able = !need[i].iter().enumerate().any(|(j, &v)| v > work[j]);
+
+                if able {
+                    change = true;
+                    finish[i] = true;
+                    work.iter_mut()
+                        .zip(alloc[i].iter())
+                        .for_each(|(w, &a)| *w += a);
+                }
+            }
+            if finish.iter().all(|&v| v) {
+                break;
+            }
+            if !change {
+                trace!("mutex dead lock detected 1909",);
+                return true;
+            }
+        }
+        false
+    }
+    /// semaphore deadlock prevention
+    pub fn sem_deadlock_prevention(&self) -> bool {
+        let task_len = self.inner_exclusive_access().tasks.len();
+        let mut finish = vec![false; task_len];
+        let mut work = self.inner_exclusive_access().sem_available.clone();
+        let need = self.inner_exclusive_access().sem_needed.clone();
+        let alloc = self.inner_exclusive_access().sem_allocated.clone();
+
+        loop {
+            let mut change = false;
+            for i in 0..task_len {
+                if finish[i] {
+                    continue;
+                }
+                let able = !need[i].iter().enumerate().any(|(j, &v)| v > work[j]);
+
+                if able {
+                    change = true;
+                    finish[i] = true;
+                    work.iter_mut()
+                        .zip(alloc[i].iter())
+                        .for_each(|(w, &a)| *w += a);
+                }
+            }
+            if finish.iter().all(|&v| v) {
+                break;
+            }
+            if !change {
+                trace!("semaphore dead lock detected 1909",);
+                return true;
+            }
+        }
+        return false;
     }
 }

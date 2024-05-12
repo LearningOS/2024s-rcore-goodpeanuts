@@ -3,7 +3,7 @@ use crate::{
     task::{add_task, current_task, TaskControlBlock},
     trap::{trap_handler, TrapContext},
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec};
 /// thread create syscall
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     trace!(
@@ -35,6 +35,25 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let new_task_res = new_task_inner.res.as_ref().unwrap();
     let new_task_tid = new_task_res.tid;
     let mut process_inner = process.inner_exclusive_access();
+
+    // get current mutex number
+    let mutex_num = process_inner.mutex_list.len();
+    let sem_num = process_inner.semaphore_list.len();
+    // 不知道为什么这里必须要加1， tasks下存放的不是当前进程块的所有线程数？?
+    let task_len = process_inner.tasks.len() + 1;
+
+    // resize matrix for new thread
+    process_inner
+        .mutex_allocated
+        .resize(task_len, vec![0; mutex_num]);
+    process_inner
+        .mutex_needed
+        .resize(task_len, vec![0; mutex_num]);
+    process_inner
+        .sem_allocated
+        .resize(task_len, vec![0; sem_num]);
+    process_inner.sem_needed.resize(task_len, vec![0; sem_num]);
+
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
     while tasks.len() < new_task_tid + 1 {
